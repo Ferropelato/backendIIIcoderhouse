@@ -17,6 +17,10 @@ class UserRepository {
     return UserModel.create(userData);
   }
 
+  async createMany(usersData) {
+    return UserModel.insertMany(usersData);
+  }
+
   async updateById(id, updates) {
     return UserModel.findByIdAndUpdate(id, updates, { new: true }).select('-password -__v');
   }

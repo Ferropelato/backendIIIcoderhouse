@@ -1,0 +1,173 @@
+const { faker } = require('@faker-js/faker');
+const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
+const userRepository = require('../repositories/user.repository');
+const orderRepository = require('../repositories/order.repository');
+const deliveryRepository = require('../repositories/delivery.repository');
+const { ROLES, ORDER_STATUS, ORDER_PRIORITY, DELIVERY_STATUS } = require('../constants');
+
+const MAX_MOCK_COUNT = 100;
+const DEFAULT_COUNTS = { users: 5, deliveryAgents: 3, orders: 5, deliveries: 5 };
+
+function clampCount(count, fallback) {
+  const parsed = Number(count);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`El parametro debe ser un numero entero mayor o igual a 0 (recibido: ${count})`);
+  }
+  return Math.min(parsed, MAX_MOCK_COUNT);
+}
+
+function randomFromEnum(enumObject) {
+  const values = Object.values(enumObject);
+  return faker.helpers.arrayElement(values);
+}
+
+function resolveCounts(rawCounts = {}) {
+  return {
+    users: rawCounts.users === undefined ? DEFAULT_COUNTS.users : clampCount(rawCounts.users),
+    deliveryAgents: rawCounts.deliveryAgents === undefined
+      ? DEFAULT_COUNTS.deliveryAgents
+      : clampCount(rawCounts.deliveryAgents),
+    orders: rawCounts.orders === undefined ? DEFAULT_COUNTS.orders : clampCount(rawCounts.orders),
+    deliveries: rawCounts.deliveries === undefined ? DEFAULT_COUNTS.deliveries : clampCount(rawCounts.deliveries),
+  };
+}
+
+function assertRelations({ users, deliveryAgents, orders, deliveries }) {
+  if (orders > 0 && users === 0) {
+    throw new Error('No se pueden generar pedidos sin usuarios: "users" debe ser mayor a 0');
+  }
+  if (deliveries > 0 && (orders === 0 || deliveryAgents === 0)) {
+    throw new Error('No se pueden generar entregas sin pedidos y repartidores: "orders" y "deliveryAgents" deben ser mayores a 0');
+  }
+}
+
+class MockService {
+  buildFakeUser(role) {
+    return {
+      _id: new mongoose.Types.ObjectId(),
+      firstName: faker.person.firstName(),
+      lastName: faker.person.lastName(),
+      email: faker.internet.email().toLowerCase(),
+      password: faker.internet.password({ length: 10 }),
+      role,
+    };
+  }
+
+  buildFakeUsers(count, role) {
+    return Array.from({ length: count }, () => this.buildFakeUser(role));
+  }
+
+  buildFakeOrder(users) {
+    const owner = faker.helpers.arrayElement(users);
+    const items = Array.from({ length: faker.number.int({ min: 1, max: 4 }) }, () => ({
+      title: faker.commerce.productName(),
+      quantity: faker.number.int({ min: 1, max: 5 }),
+      price: Number(faker.commerce.price({ min: 10, max: 500 })),
+    }));
+    const totalAmount = Number(items.reduce((acc, item) => acc + item.quantity * item.price, 0).toFixed(2));
+
+    return {
+      _id: new mongoose.Types.ObjectId(),
+      user: owner._id,
+      items,
+      totalAmount,
+      status: randomFromEnum(ORDER_STATUS),
+      priority: randomFromEnum(ORDER_PRIORITY),
+    };
+  }
+
+  buildFakeOrders(count, users) {
+    return Array.from({ length: count }, () => this.buildFakeOrder(users));
+  }
+
+  buildFakeDelivery(orders, deliveryAgents) {
+    const order = faker.helpers.arrayElement(orders);
+    const agent = faker.helpers.arrayElement(deliveryAgents);
+
+    return {
+      _id: new mongoose.Types.ObjectId(),
+      order: order._id,
+      deliveryAgent: agent._id,
+      status: randomFromEnum(DELIVERY_STATUS),
+      address: faker.location.streetAddress(),
+      estimatedDeliveryDate: faker.date.soon({ days: 7 }),
+    };
+  }
+
+  buildFakeDeliveries(count, orders, deliveryAgents) {
+    return Array.from({ length: count }, () => this.buildFakeDelivery(orders, deliveryAgents));
+  }
+
+  previewUsers(count) {
+    return this.buildFakeUsers(clampCount(count ?? DEFAULT_COUNTS.users), ROLES.USER);
+  }
+
+  previewDeliveryAgents(count) {
+    return this.buildFakeUsers(clampCount(count ?? DEFAULT_COUNTS.deliveryAgents), ROLES.DELIVERY);
+  }
+
+  previewOrders(orderCount, userCount) {
+    const counts = resolveCounts({ orders: orderCount, users: userCount });
+    assertRelations({ ...counts, deliveryAgents: 1, deliveries: 0 });
+    const fakeUsers = this.buildFakeUsers(counts.users, ROLES.USER);
+    return this.buildFakeOrders(counts.orders, fakeUsers);
+  }
+
+  previewDeliveries(deliveryCount, orderCount, agentCount) {
+    const counts = resolveCounts({ deliveries: deliveryCount, orders: orderCount, deliveryAgents: agentCount });
+    assertRelations({ ...counts, users: 1 });
+    const fakeUsers = this.buildFakeUsers(counts.orders, ROLES.USER);
+    const fakeOrders = this.buildFakeOrders(counts.orders, fakeUsers);
+    const fakeAgents = this.buildFakeUsers(counts.deliveryAgents, ROLES.DELIVERY);
+    return this.buildFakeDeliveries(counts.deliveries, fakeOrders, fakeAgents);
+  }
+
+  generatePreview(rawCounts) {
+    const counts = resolveCounts(rawCounts);
+    assertRelations(counts);
+
+    const fakeUsers = this.buildFakeUsers(counts.users, ROLES.USER);
+    const fakeAgents = this.buildFakeUsers(counts.deliveryAgents, ROLES.DELIVERY);
+    const fakeOrders = counts.orders > 0 ? this.buildFakeOrders(counts.orders, fakeUsers) : [];
+    const fakeDeliveries = counts.deliveries > 0
+      ? this.buildFakeDeliveries(counts.deliveries, fakeOrders, fakeAgents)
+      : [];
+
+    return { users: fakeUsers, deliveryAgents: fakeAgents, orders: fakeOrders, deliveries: fakeDeliveries };
+  }
+
+  async insertMockData(rawCounts) {
+    const counts = resolveCounts(rawCounts);
+    assertRelations(counts);
+
+    const rawUsers = this.buildFakeUsers(counts.users, ROLES.USER);
+    const rawAgents = this.buildFakeUsers(counts.deliveryAgents, ROLES.DELIVERY);
+
+    const hashedPeople = [...rawUsers, ...rawAgents].map((person) => ({
+      ...person,
+      password: bcrypt.hashSync(person.password, 10),
+    }));
+
+    const insertedPeople = hashedPeople.length > 0 ? await userRepository.createMany(hashedPeople) : [];
+    const insertedUsers = insertedPeople.filter((person) => person.role === ROLES.USER);
+    const insertedAgents = insertedPeople.filter((person) => person.role === ROLES.DELIVERY);
+
+    const rawOrders = counts.orders > 0 ? this.buildFakeOrders(counts.orders, insertedUsers) : [];
+    const insertedOrders = rawOrders.length > 0 ? await orderRepository.createMany(rawOrders) : [];
+
+    const rawDeliveries = counts.deliveries > 0
+      ? this.buildFakeDeliveries(counts.deliveries, insertedOrders, insertedAgents)
+      : [];
+    const insertedDeliveries = rawDeliveries.length > 0 ? await deliveryRepository.createMany(rawDeliveries) : [];
+
+    return {
+      users: insertedUsers.length,
+      deliveryAgents: insertedAgents.length,
+      orders: insertedOrders.length,
+      deliveries: insertedDeliveries.length,
+    };
+  }
+}
+
+module.exports = new MockService();
