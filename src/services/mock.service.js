@@ -5,16 +5,17 @@ const userRepository = require('../repositories/user.repository');
 const orderRepository = require('../repositories/order.repository');
 const deliveryRepository = require('../repositories/delivery.repository');
 const { ROLES, ORDER_STATUS, ORDER_PRIORITY, DELIVERY_STATUS } = require('../constants');
+const { InvalidMockQuantityError, MockRelationError, MockGenerationError } = require('../errors');
 
 const MAX_MOCK_COUNT = 100;
 const DEFAULT_COUNTS = { users: 5, deliveryAgents: 3, orders: 5, deliveries: 5 };
 
-function clampCount(count, fallback) {
+function clampCount(count, fieldName) {
   const parsed = Number(count);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`El parametro debe ser un numero entero mayor o igual a 0 (recibido: ${count})`);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0 || parsed > MAX_MOCK_COUNT) {
+    throw new InvalidMockQuantityError(fieldName, count, MAX_MOCK_COUNT);
   }
-  return Math.min(parsed, MAX_MOCK_COUNT);
+  return parsed;
 }
 
 function randomFromEnum(enumObject) {
@@ -24,21 +25,25 @@ function randomFromEnum(enumObject) {
 
 function resolveCounts(rawCounts = {}) {
   return {
-    users: rawCounts.users === undefined ? DEFAULT_COUNTS.users : clampCount(rawCounts.users),
+    users: rawCounts.users === undefined ? DEFAULT_COUNTS.users : clampCount(rawCounts.users, 'users'),
     deliveryAgents: rawCounts.deliveryAgents === undefined
       ? DEFAULT_COUNTS.deliveryAgents
-      : clampCount(rawCounts.deliveryAgents),
-    orders: rawCounts.orders === undefined ? DEFAULT_COUNTS.orders : clampCount(rawCounts.orders),
-    deliveries: rawCounts.deliveries === undefined ? DEFAULT_COUNTS.deliveries : clampCount(rawCounts.deliveries),
+      : clampCount(rawCounts.deliveryAgents, 'deliveryAgents'),
+    orders: rawCounts.orders === undefined ? DEFAULT_COUNTS.orders : clampCount(rawCounts.orders, 'orders'),
+    deliveries: rawCounts.deliveries === undefined
+      ? DEFAULT_COUNTS.deliveries
+      : clampCount(rawCounts.deliveries, 'deliveries'),
   };
 }
 
 function assertRelations({ users, deliveryAgents, orders, deliveries }) {
   if (orders > 0 && users === 0) {
-    throw new Error('No se pueden generar pedidos sin usuarios: "users" debe ser mayor a 0');
+    throw new MockRelationError('No se pueden generar pedidos sin usuarios: "users" debe ser mayor a 0');
   }
   if (deliveries > 0 && (orders === 0 || deliveryAgents === 0)) {
-    throw new Error('No se pueden generar entregas sin pedidos y repartidores: "orders" y "deliveryAgents" deben ser mayores a 0');
+    throw new MockRelationError(
+      'No se pueden generar entregas sin pedidos y repartidores: "orders" y "deliveryAgents" deben ser mayores a 0'
+    );
   }
 }
 
@@ -100,22 +105,29 @@ class MockService {
   }
 
   previewUsers(count) {
-    return this.buildFakeUsers(clampCount(count ?? DEFAULT_COUNTS.users), ROLES.USER);
+    return this.buildFakeUsers(clampCount(count ?? DEFAULT_COUNTS.users, 'count'), ROLES.USER);
   }
 
   previewDeliveryAgents(count) {
-    return this.buildFakeUsers(clampCount(count ?? DEFAULT_COUNTS.deliveryAgents), ROLES.DELIVERY);
+    return this.buildFakeUsers(clampCount(count ?? DEFAULT_COUNTS.deliveryAgents, 'count'), ROLES.DELIVERY);
   }
 
   previewOrders(orderCount, userCount) {
-    const counts = resolveCounts({ orders: orderCount, users: userCount });
+    const counts = {
+      orders: clampCount(orderCount ?? DEFAULT_COUNTS.orders, 'count'),
+      users: clampCount(userCount ?? DEFAULT_COUNTS.users, 'users'),
+    };
     assertRelations({ ...counts, deliveryAgents: 1, deliveries: 0 });
     const fakeUsers = this.buildFakeUsers(counts.users, ROLES.USER);
     return this.buildFakeOrders(counts.orders, fakeUsers);
   }
 
   previewDeliveries(deliveryCount, orderCount, agentCount) {
-    const counts = resolveCounts({ deliveries: deliveryCount, orders: orderCount, deliveryAgents: agentCount });
+    const counts = {
+      deliveries: clampCount(deliveryCount ?? DEFAULT_COUNTS.deliveries, 'count'),
+      orders: clampCount(orderCount ?? DEFAULT_COUNTS.orders, 'orders'),
+      deliveryAgents: clampCount(agentCount ?? DEFAULT_COUNTS.deliveryAgents, 'agents'),
+    };
     assertRelations({ ...counts, users: 1 });
     const fakeUsers = this.buildFakeUsers(counts.orders, ROLES.USER);
     const fakeOrders = this.buildFakeOrders(counts.orders, fakeUsers);
@@ -149,17 +161,33 @@ class MockService {
       password: bcrypt.hashSync(person.password, 10),
     }));
 
-    const insertedPeople = hashedPeople.length > 0 ? await userRepository.createMany(hashedPeople) : [];
+    let insertedPeople;
+    try {
+      insertedPeople = hashedPeople.length > 0 ? await userRepository.createMany(hashedPeople) : [];
+    } catch (error) {
+      throw new MockGenerationError(error);
+    }
+
     const insertedUsers = insertedPeople.filter((person) => person.role === ROLES.USER);
     const insertedAgents = insertedPeople.filter((person) => person.role === ROLES.DELIVERY);
 
     const rawOrders = counts.orders > 0 ? this.buildFakeOrders(counts.orders, insertedUsers) : [];
-    const insertedOrders = rawOrders.length > 0 ? await orderRepository.createMany(rawOrders) : [];
+    let insertedOrders;
+    try {
+      insertedOrders = rawOrders.length > 0 ? await orderRepository.createMany(rawOrders) : [];
+    } catch (error) {
+      throw new MockGenerationError(error);
+    }
 
     const rawDeliveries = counts.deliveries > 0
       ? this.buildFakeDeliveries(counts.deliveries, insertedOrders, insertedAgents)
       : [];
-    const insertedDeliveries = rawDeliveries.length > 0 ? await deliveryRepository.createMany(rawDeliveries) : [];
+    let insertedDeliveries;
+    try {
+      insertedDeliveries = rawDeliveries.length > 0 ? await deliveryRepository.createMany(rawDeliveries) : [];
+    } catch (error) {
+      throw new MockGenerationError(error);
+    }
 
     return {
       users: insertedUsers.length,

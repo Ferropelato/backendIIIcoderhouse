@@ -1,6 +1,6 @@
-# ShipNow API - Entrega 1 y 2
+# ShipNow API - Entrega 1, 2 y 3
 
-API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, y un módulo de mocking para generar datos de prueba.
+API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, un módulo de mocking para generar datos de prueba, y una capa centralizada de manejo de errores.
 
 ## Estructura del proyecto
 
@@ -8,11 +8,14 @@ API de ShipNow refactorizada en arquitectura por capas (Controller -> Service ->
 src/
   config/         # Configuracion de entorno (dotenv + validacion)
   constants/      # Roles y estados del dominio (Object.freeze)
+  errors/         # Errores personalizados del dominio + diccionario de errores
+  middlewares/    # Middleware global de manejo de errores
   models/         # Esquemas de Mongoose (sin logica de negocio)
   repositories/    # Unico lugar que conoce Mongoose/MongoDB
-  services/       # Logica de negocio
-  controllers/    # Manejo de req/res, puerta de entrada HTTP
+  services/       # Logica de negocio (aca se lanzan los errores de dominio)
+  controllers/    # Manejo de req/res, puerta de entrada HTTP (sin try/catch propios)
   routes/         # Conectan cada path con su Controller
+  utils/          # catchAsync: reenvia errores sync/async al middleware global
   app.js          # Configuracion de Express
   server.js       # Punto de entrada
 ```
@@ -101,3 +104,73 @@ El **Service** concentra las reglas de negocio: decidir el `status` de un produc
 - Mantener a los Controllers simples: solo traducen HTTP a llamadas de Service y devuelven la respuesta.
 
 `MockService` sigue el mismo principio: arma los objetos falsos y decide las relaciones entre entidades (a qué usuario pertenece un pedido, a qué pedido y repartidor pertenece una entrega), pero delega toda la escritura en MongoDB a `UserRepository`, `OrderRepository` y `DeliveryRepository`. Así, generar datos de prueba no abre una segunda puerta de acceso a la base por fuera de los Repositories ya existentes.
+
+## Manejo centralizado de errores
+
+Ningún controller ni ninguna ruta arma respuestas de error a mano. El flujo es siempre el mismo:
+
+1. **Los Services detectan el problema** (usuario inexistente, código de producto duplicado, cantidad de mocks inválida, etc.) y lanzan un **error de dominio** (`src/errors/domainErrors.js`), que extiende la clase base `AppError` (`src/errors/AppError.js`). Cada error ya trae su `code` y su `statusCode` HTTP, tomados del **diccionario de errores** (`src/errors/errorDictionary.js`).
+2. **Los Controllers** están envueltos con `catchAsync` (`src/utils/catchAsync.js`), que captura cualquier error —sync o async— y lo reenvía con `next(error)`. Ningún controller tiene `try/catch` propio.
+3. **El middleware global** (`src/middlewares/errorHandler.middleware.js`), registrado al final de `app.js`, es el único lugar que arma la respuesta HTTP final:
+   - Si el error es un `AppError` (o una subclase), responde con su `statusCode` y su `code`.
+   - Si es un error de validación/cast de Mongoose (por ejemplo, un `id` con formato inválido), responde `400` con `code: "VALIDATION_ERROR"`.
+   - Cualquier otro error no esperado responde `500` con `code: "INTERNAL_SERVER_ERROR"`, sin exponer detalles internos.
+4. Las rutas que no existen también pasan por el middleware global: se lanza un `RouteNotFoundError` (404) en vez de responder directamente.
+
+### Estructura de respuesta de error
+
+Toda respuesta de error tiene siempre esta forma:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Producto con id 64f... no encontrado",
+    "details": { "id": "64f..." }
+  }
+}
+```
+
+`details` es opcional (solo aparece si el error lo define). Los `code` disponibles son: `VALIDATION_ERROR` (400), `NOT_FOUND` (404), `CONFLICT` (409), `UNAUTHORIZED` (401), `FORBIDDEN` (403) e `INTERNAL_SERVER_ERROR` (500).
+
+### Errores de dominio implementados
+
+- `UserNotFoundError`, `ProductNotFoundError`, `OrderNotFoundError`, `RouteNotFoundError` → 404
+- `DuplicateResourceError` (email o código de producto repetido) → 409
+- `InvalidRoleError` (rol fuera de `ROLES`) → 400
+- `InvalidCredentialsError` (login fallido) → 401
+- `ForbiddenRoleActionError` (un usuario sin permisos intenta cambiar roles) → 403
+- `InvalidMockQuantityError` (cantidad de mocks negativa, no numérica o mayor al máximo permitido) → 400
+- `MockRelationError` (por ejemplo, pedir pedidos sin usuarios, o entregas sin pedidos/repartidores) → 400
+- `MockGenerationError` (falla real al insertar los datos de prueba en MongoDB) → 500
+
+### Cómo probar los casos inválidos
+
+```
+# Ruta inexistente -> 404
+curl http://localhost:8080/api/no-existe
+
+# Producto no encontrado -> 404
+curl http://localhost:8080/api/products/64b000000000000000000001
+
+# Id con formato invalido -> 400
+curl http://localhost:8080/api/products/no-es-un-id
+
+# Login con credenciales invalidas -> 401
+curl -X POST http://localhost:8080/api/users/login -H "Content-Type: application/json" -d "{\"email\":\"no@existe.com\",\"password\":\"x\"}"
+
+# Cambiar rol sin permisos -> 403
+curl -X PUT http://localhost:8080/api/users/<id>/role -H "Content-Type: application/json" -d "{\"role\":\"admin\",\"requesterRole\":\"user\"}"
+
+# Mocks: cantidad invalida (negativa) -> 400
+curl "http://localhost:8080/api/mocks/users?count=-3"
+
+# Mocks: cantidad por encima del maximo permitido (100) -> 400
+curl "http://localhost:8080/api/mocks/users?count=500"
+
+# Mocks: relacion invalida (pedidos sin usuarios) -> 400
+curl "http://localhost:8080/api/mocks/orders?count=2&users=0"
+```
+
+Para probar `MockGenerationError` (falla real de MongoDB) alcanza con apagar la base de datos o usar una `MONGODB_URI` que apunte a un servidor caído y llamar a `POST /api/mocks/generate`: la app responde `500` con la estructura uniforme en vez de crashear.

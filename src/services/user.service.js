@@ -1,6 +1,13 @@
 const bcrypt = require('bcryptjs');
 const userRepository = require('../repositories/user.repository');
 const { ROLES } = require('../constants');
+const {
+  UserNotFoundError,
+  DuplicateResourceError,
+  InvalidRoleError,
+  InvalidCredentialsError,
+  ForbiddenRoleActionError,
+} = require('../errors');
 
 class UserService {
   async getAllUsers() {
@@ -10,7 +17,7 @@ class UserService {
   async getUserById(id) {
     const user = await userRepository.getById(id);
     if (!user) {
-      throw new Error('Usuario no encontrado');
+      throw new UserNotFoundError(id);
     }
     return user;
   }
@@ -18,11 +25,11 @@ class UserService {
   async registerUser({ firstName, lastName, email, password, role }) {
     const existing = await userRepository.getByEmail(email);
     if (existing) {
-      throw new Error(`Ya existe un usuario registrado con el email ${email}`);
+      throw new DuplicateResourceError(`Ya existe un usuario registrado con el email ${email}`, { email });
     }
 
     if (role && !Object.values(ROLES).includes(role)) {
-      throw new Error(`Rol invalido: ${role}`);
+      throw new InvalidRoleError(role);
     }
 
     const hashedPassword = bcrypt.hashSync(password, 10);
@@ -41,12 +48,12 @@ class UserService {
   async loginUser({ email, password }) {
     const user = await userRepository.getByEmail(email);
     if (!user) {
-      throw new Error('Credenciales invalidas');
+      throw new InvalidCredentialsError();
     }
 
     const isValidPassword = bcrypt.compareSync(password, user.password);
     if (!isValidPassword) {
-      throw new Error('Credenciales invalidas');
+      throw new InvalidCredentialsError();
     }
 
     return this.toPublicUser(user);
@@ -54,16 +61,16 @@ class UserService {
 
   async changeUserRole(id, requesterRole, newRole) {
     if (requesterRole !== ROLES.ADMIN) {
-      throw new Error('No tenes permisos para modificar roles');
+      throw new ForbiddenRoleActionError('No tenes permisos para modificar roles');
     }
 
     if (!Object.values(ROLES).includes(newRole)) {
-      throw new Error(`Rol invalido: ${newRole}`);
+      throw new InvalidRoleError(newRole);
     }
 
     const user = await userRepository.updateById(id, { role: newRole });
     if (!user) {
-      throw new Error('Usuario no encontrado');
+      throw new UserNotFoundError(id);
     }
     return user;
   }

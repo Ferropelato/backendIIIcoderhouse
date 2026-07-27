@@ -1,65 +1,42 @@
 const mockService = require('../services/mock.service');
+const catchAsync = require('../utils/catchAsync');
 
 class MockController {
-  previewUsers(req, res) {
-    try {
-      const users = mockService.previewUsers(req.query.count);
-      res.status(200).json({ status: 'success', payload: users });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  previewUsers = catchAsync((req, res) => {
+    const users = mockService.previewUsers(req.query.count);
+    res.status(200).json({ status: 'success', payload: users });
+  });
 
-  previewDeliveryAgents(req, res) {
-    try {
-      const deliveryAgents = mockService.previewDeliveryAgents(req.query.count);
-      res.status(200).json({ status: 'success', payload: deliveryAgents });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  previewDeliveryAgents = catchAsync((req, res) => {
+    const deliveryAgents = mockService.previewDeliveryAgents(req.query.count);
+    res.status(200).json({ status: 'success', payload: deliveryAgents });
+  });
 
-  previewOrders(req, res) {
-    try {
-      const orders = mockService.previewOrders(req.query.count, req.query.users);
-      res.status(200).json({ status: 'success', payload: orders });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  previewOrders = catchAsync((req, res) => {
+    const orders = mockService.previewOrders(req.query.count, req.query.users);
+    res.status(200).json({ status: 'success', payload: orders });
+  });
 
-  previewDeliveries(req, res) {
-    try {
-      const deliveries = mockService.previewDeliveries(req.query.count, req.query.orders, req.query.agents);
-      res.status(200).json({ status: 'success', payload: deliveries });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  previewDeliveries = catchAsync((req, res) => {
+    const deliveries = mockService.previewDeliveries(req.query.count, req.query.orders, req.query.agents);
+    res.status(200).json({ status: 'success', payload: deliveries });
+  });
 
-  previewAll(req, res) {
-    try {
-      const { users, deliveryAgents, orders, deliveries } = req.query;
-      const data = mockService.generatePreview({ users, deliveryAgents, orders, deliveries });
-      res.status(200).json({ status: 'success', payload: data });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  previewAll = catchAsync((req, res) => {
+    const { users, deliveryAgents, orders, deliveries } = req.query;
+    const data = mockService.generatePreview({ users, deliveryAgents, orders, deliveries });
+    res.status(200).json({ status: 'success', payload: data });
+  });
 
-  async generate(req, res) {
-    try {
-      const { users, deliveryAgents, orders, deliveries } = req.body;
-      const summary = await mockService.insertMockData({ users, deliveryAgents, orders, deliveries });
-      res.status(201).json({
-        status: 'success',
-        message: 'Datos de prueba insertados en la base de datos',
-        payload: summary,
-      });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  generate = catchAsync(async (req, res) => {
+    const { users, deliveryAgents, orders, deliveries } = req.body;
+    const summary = await mockService.insertMockData({ users, deliveryAgents, orders, deliveries });
+    res.status(201).json({
+      status: 'success',
+      message: 'Datos de prueba insertados en la base de datos',
+      payload: summary,
+    });
+  });
 }
 
 module.exports = new MockController();

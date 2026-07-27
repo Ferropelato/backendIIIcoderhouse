@@ -1,51 +1,32 @@
 const userService = require('../services/user.service');
+const catchAsync = require('../utils/catchAsync');
 
 class UserController {
-  async getAll(req, res) {
-    try {
-      const users = await userService.getAllUsers();
-      res.status(200).json({ status: 'success', payload: users });
-    } catch (error) {
-      res.status(500).json({ status: 'error', message: error.message });
-    }
-  }
+  getAll = catchAsync(async (req, res) => {
+    const users = await userService.getAllUsers();
+    res.status(200).json({ status: 'success', payload: users });
+  });
 
-  async getById(req, res) {
-    try {
-      const user = await userService.getUserById(req.params.uid);
-      res.status(200).json({ status: 'success', payload: user });
-    } catch (error) {
-      res.status(404).json({ status: 'error', message: error.message });
-    }
-  }
+  getById = catchAsync(async (req, res) => {
+    const user = await userService.getUserById(req.params.uid);
+    res.status(200).json({ status: 'success', payload: user });
+  });
 
-  async register(req, res) {
-    try {
-      const user = await userService.registerUser(req.body);
-      res.status(201).json({ status: 'success', payload: user });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  register = catchAsync(async (req, res) => {
+    const user = await userService.registerUser(req.body);
+    res.status(201).json({ status: 'success', payload: user });
+  });
 
-  async login(req, res) {
-    try {
-      const user = await userService.loginUser(req.body);
-      res.status(200).json({ status: 'success', payload: user });
-    } catch (error) {
-      res.status(401).json({ status: 'error', message: error.message });
-    }
-  }
+  login = catchAsync(async (req, res) => {
+    const user = await userService.loginUser(req.body);
+    res.status(200).json({ status: 'success', payload: user });
+  });
 
-  async updateRole(req, res) {
-    try {
-      const { role, requesterRole } = req.body;
-      const user = await userService.changeUserRole(req.params.uid, requesterRole, role);
-      res.status(200).json({ status: 'success', payload: user });
-    } catch (error) {
-      res.status(400).json({ status: 'error', message: error.message });
-    }
-  }
+  updateRole = catchAsync(async (req, res) => {
+    const { role, requesterRole } = req.body;
+    const user = await userService.changeUserRole(req.params.uid, requesterRole, role);
+    res.status(200).json({ status: 'success', payload: user });
+  });
 }
 
 module.exports = new UserController();

@@ -1,5 +1,6 @@
 const productRepository = require('../repositories/product.repository');
 const { PRODUCT_STATUS } = require('../constants');
+const { ProductNotFoundError, DuplicateResourceError } = require('../errors');
 
 class ProductService {
   async getAllProducts() {
@@ -13,7 +14,7 @@ class ProductService {
   async getProductById(id) {
     const product = await productRepository.getById(id);
     if (!product) {
-      throw new Error('Producto no encontrado');
+      throw new ProductNotFoundError(id);
     }
     return product;
   }
@@ -21,7 +22,9 @@ class ProductService {
   async createProduct(productData) {
     const existing = await productRepository.getByCode(productData.code);
     if (existing) {
-      throw new Error(`Ya existe un producto con el codigo ${productData.code}`);
+      throw new DuplicateResourceError(`Ya existe un producto con el codigo ${productData.code}`, {
+        code: productData.code,
+      });
     }
 
     const status = productData.stock > 0 ? PRODUCT_STATUS.AVAILABLE : PRODUCT_STATUS.OUT_OF_STOCK;
@@ -38,7 +41,7 @@ class ProductService {
 
     const product = await productRepository.updateById(id, nextUpdates);
     if (!product) {
-      throw new Error('Producto no encontrado');
+      throw new ProductNotFoundError(id);
     }
     return product;
   }
@@ -46,7 +49,7 @@ class ProductService {
   async deleteProduct(id) {
     const product = await productRepository.deleteById(id);
     if (!product) {
-      throw new Error('Producto no encontrado');
+      throw new ProductNotFoundError(id);
     }
     return product;
   }
