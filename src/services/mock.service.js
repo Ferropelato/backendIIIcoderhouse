@@ -6,6 +6,7 @@ const orderRepository = require('../repositories/order.repository');
 const deliveryRepository = require('../repositories/delivery.repository');
 const { ROLES, ORDER_STATUS, ORDER_PRIORITY, DELIVERY_STATUS } = require('../constants');
 const { InvalidMockQuantityError, MockRelationError, MockGenerationError } = require('../errors');
+const logger = require('../logger');
 
 const MAX_MOCK_COUNT = 100;
 const DEFAULT_COUNTS = { users: 5, deliveryAgents: 3, orders: 5, deliveries: 5 };
@@ -189,12 +190,19 @@ class MockService {
       throw new MockGenerationError(error);
     }
 
-    return {
+    const summary = {
       users: insertedUsers.length,
       deliveryAgents: insertedAgents.length,
       orders: insertedOrders.length,
       deliveries: insertedDeliveries.length,
     };
+
+    logger.info(
+      `Datos de prueba generados: usuarios=${summary.users}, repartidores=${summary.deliveryAgents}, ` +
+      `pedidos=${summary.orders}, entregas=${summary.deliveries}`
+    );
+
+    return summary;
   }
 }
 

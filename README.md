@@ -1,6 +1,6 @@
-# ShipNow API - Entrega 1, 2 y 3
+# ShipNow API - Entrega 1, 2, 3 y 4
 
-API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, un módulo de mocking para generar datos de prueba, y una capa centralizada de manejo de errores.
+API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, un módulo de mocking para generar datos de prueba, una capa centralizada de manejo de errores y logging profesional con Winston.
 
 ## Estructura del proyecto
 
@@ -9,7 +9,8 @@ src/
   config/         # Configuracion de entorno (dotenv + validacion)
   constants/      # Roles y estados del dominio (Object.freeze)
   errors/         # Errores personalizados del dominio + diccionario de errores
-  middlewares/    # Middleware global de manejo de errores
+  logger/         # Configuracion centralizada de Winston (niveles, formato, transports)
+  middlewares/    # Middleware global de manejo de errores (integrado con el logger)
   models/         # Esquemas de Mongoose (sin logica de negocio)
   repositories/    # Unico lugar que conoce Mongoose/MongoDB
   services/       # Logica de negocio (aca se lanzan los errores de dominio)
@@ -18,6 +19,7 @@ src/
   utils/          # catchAsync: reenvia errores sync/async al middleware global
   app.js          # Configuracion de Express
   server.js       # Punto de entrada
+logs/             # Archivos de log generados en runtime (ignorados por git, salvo .gitkeep)
 ```
 
 ## Instrucciones para correr el proyecto localmente
@@ -174,3 +176,48 @@ curl "http://localhost:8080/api/mocks/orders?count=2&users=0"
 ```
 
 Para probar `MockGenerationError` (falla real de MongoDB) alcanza con apagar la base de datos o usar una `MONGODB_URI` que apunte a un servidor caído y llamar a `POST /api/mocks/generate`: la app responde `500` con la estructura uniforme en vez de crashear.
+
+## Logging (Winston)
+
+Toda la aplicación usa un logger centralizado con **Winston** (`src/logger/logger.js`), en vez de `console.log` sueltos. El middleware de errores, el arranque del servidor, la conexión a MongoDB y el módulo de mocks usan este mismo logger.
+
+### Niveles de log
+
+De más a menos crítico:
+
+| Nivel     | Uso                                                                 |
+|-----------|----------------------------------------------------------------------|
+| `fatal`   | Fallas críticas al arrancar: configuración inválida o Mongo no conecta (el proceso termina con `process.exit(1)`). |
+| `error`   | Errores inesperados del servidor o fallas reales de la base de datos (respuestas `5xx`). |
+| `warning` | Errores esperados/de negocio (respuestas `4xx`): recurso no encontrado, credenciales inválidas, cantidad de mocks inválida, ruta inexistente, etc. |
+| `info`    | Eventos normales relevantes: servidor iniciado, conexión a MongoDB exitosa, datos de prueba generados. |
+| `http`    | Una línea por cada request entrante (`METHOD /ruta`), logueada por un middleware en `app.js`. |
+| `debug`   | Detalle fino, solo visible en desarrollo. |
+
+### Comportamiento según el entorno (`NODE_ENV`)
+
+- **`development`**: se loguean todos los niveles, incluido `debug` y `http`, tanto en consola como en archivo.
+- **`production`**: solo se loguean `info`, `warning`, `error` y `fatal` (se descartan `debug` y `http`), para no ensuciar los logs con ruido de bajo nivel.
+
+### Dónde se guardan los logs
+
+En la carpeta `logs/` (se crea sola en runtime), con rotación diaria vía `winston-daily-rotate-file`:
+
+- `logs/combined-YYYY-MM-DD.log`: todos los niveles habilitados para el entorno actual (se conservan 14 días).
+- `logs/error-YYYY-MM-DD.log`: **solo** `error` y `fatal` (se conservan 30 días), para poder revisar rápidamente qué falló sin ruido de `info`/`debug`.
+
+Ambos transports rotan automáticamente por día y por tamaño (máximo 20 MB por archivo), así que los archivos no crecen sin control.
+
+### Qué se ignora en Git
+
+`.gitignore` excluye `logs/*` (todos los archivos generados por la app), pero mantiene trackeado `logs/.gitkeep` para que la carpeta quede documentada en el repositorio aunque esté vacía.
+
+### Endpoint de prueba del logger
+
+`GET /api/logs/test` dispara un log de cada nivel (`debug`, `http`, `info`, `warning`, `error`, `fatal`) y devuelve un `200` con la lista de niveles generados. Es una herramienta interna, no representa una funcionalidad de negocio.
+
+```
+curl http://localhost:8080/api/logs/test
+```
+
+Después de llamarlo, se puede revisar la consola y los archivos en `logs/` para confirmar que cada nivel apareció donde corresponde (por ejemplo, que `error.log` solo tiene las líneas de `error` y `fatal`, sin `debug` ni `info`).

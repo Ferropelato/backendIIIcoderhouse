@@ -1,17 +1,28 @@
 const mongoose = require('mongoose');
+const logger = require('./logger');
+
+let config;
+try {
+  config = require('./config');
+} catch (error) {
+  logger.fatal(`No se pudo iniciar la aplicacion por un error de configuracion: ${error.message}`);
+  process.exit(1);
+}
+
 const app = require('./app');
-const config = require('./config');
 
 async function startServer() {
-  await mongoose.connect(config.mongoUri);
-  console.log('Conectado a MongoDB');
+  try {
+    await mongoose.connect(config.mongoUri);
+    logger.info('Conexion a MongoDB establecida');
+  } catch (error) {
+    logger.fatal(`No se pudo conectar a MongoDB: ${error.message}`);
+    process.exit(1);
+  }
 
   app.listen(config.port, () => {
-    console.log(`Servidor ShipNow corriendo en el puerto ${config.port}`);
+    logger.info(`Servidor ShipNow escuchando en el puerto ${config.port}`);
   });
 }
 
-startServer().catch((error) => {
-  console.error('Error al iniciar el servidor:', error.message);
-  process.exit(1);
-});
+startServer();
