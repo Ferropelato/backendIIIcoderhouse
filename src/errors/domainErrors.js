@@ -57,6 +57,12 @@ class OrderNotFoundError extends NotFoundError {
   }
 }
 
+class DeliveryNotFoundError extends NotFoundError {
+  constructor(id) {
+    super(`Entrega con id ${id} no encontrada`, { id });
+  }
+}
+
 class RouteNotFoundError extends NotFoundError {
   constructor(method, path) {
     super(`Ruta ${method} ${path} no encontrada`, { method, path });
@@ -110,6 +116,22 @@ class MockGenerationError extends InternalServerError {
   }
 }
 
+class InvalidStatusError extends ValidationError {
+  constructor(entity, status, allowedValues) {
+    super(`Estado invalido para ${entity}: "${status}". Valores permitidos: ${allowedValues.join(', ')}`, {
+      entity,
+      status,
+      allowedValues,
+    });
+  }
+}
+
+class InvalidDeliveryAgentError extends ValidationError {
+  constructor(userId) {
+    super(`El usuario ${userId} no existe o no tiene rol de repartidor`, { userId });
+  }
+}
+
 module.exports = {
   AppError,
   ValidationError,
@@ -121,6 +143,7 @@ module.exports = {
   UserNotFoundError,
   ProductNotFoundError,
   OrderNotFoundError,
+  DeliveryNotFoundError,
   RouteNotFoundError,
   DuplicateResourceError,
   InvalidRoleError,
@@ -129,4 +152,6 @@ module.exports = {
   InvalidMockQuantityError,
   MockRelationError,
   MockGenerationError,
+  InvalidStatusError,
+  InvalidDeliveryAgentError,
 };

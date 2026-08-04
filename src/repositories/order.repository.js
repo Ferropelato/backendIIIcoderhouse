@@ -16,6 +16,10 @@ class OrderRepository {
   async createMany(ordersData) {
     return OrderModel.insertMany(ordersData);
   }
+
+  async updateById(id, updates) {
+    return OrderModel.findByIdAndUpdate(id, updates, { new: true }).select('-__v');
+  }
 }
 
 module.exports = new OrderRepository();

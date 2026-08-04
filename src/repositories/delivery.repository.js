@@ -16,6 +16,10 @@ class DeliveryRepository {
   async createMany(deliveriesData) {
     return DeliveryModel.insertMany(deliveriesData);
   }
+
+  async updateById(id, updates) {
+    return DeliveryModel.findByIdAndUpdate(id, updates, { new: true }).select('-__v');
+  }
 }
 
 module.exports = new DeliveryRepository();

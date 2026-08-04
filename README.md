@@ -1,6 +1,6 @@
-# ShipNow API - Entrega 1, 2, 3 y 4
+# ShipNow API - Entrega 1, 2, 3, 4 y 5
 
-API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, un módulo de mocking para generar datos de prueba, una capa centralizada de manejo de errores y logging profesional con Winston.
+API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, modulo de mocking, manejo centralizado de errores, logging profesional con Winston y documentacion interactiva con Swagger/OpenAPI.
 
 ## Estructura del proyecto
 
@@ -8,6 +8,7 @@ API de ShipNow refactorizada en arquitectura por capas (Controller -> Service ->
 src/
   config/         # Configuracion de entorno (dotenv + validacion)
   constants/      # Roles y estados del dominio (Object.freeze)
+  docs/           # Configuracion y contenido de Swagger/OpenAPI (separado de las rutas)
   errors/         # Errores personalizados del dominio + diccionario de errores
   logger/         # Configuracion centralizada de Winston (niveles, formato, transports)
   middlewares/    # Middleware global de manejo de errores (integrado con el logger)
@@ -50,6 +51,8 @@ logs/             # Archivos de log generados en runtime (ignorados por git, sal
 
 ## Endpoints principales
 
+> La documentación interactiva y siempre actualizada está en Swagger: ver la sección [Documentación con Swagger](#documentación-con-swagger-openapi) más abajo.
+
 - `GET /api/products` (?available=true filtra solo productos con stock disponible)
 - `GET /api/products/:pid`
 - `POST /api/products`
@@ -60,6 +63,16 @@ logs/             # Archivos de log generados en runtime (ignorados por git, sal
 - `POST /api/users/register`
 - `POST /api/users/login`
 - `PUT /api/users/:uid/role`
+- `GET /api/orders`
+- `GET /api/orders/:oid`
+- `POST /api/orders`
+- `PATCH /api/orders/:oid/status`
+- `GET /api/deliveries`
+- `GET /api/deliveries/:did`
+- `POST /api/deliveries`
+- `PATCH /api/deliveries/:did/status`
+
+Los pedidos (`orders`) y las entregas (`deliveries`) se agregaron como endpoints reales en esta entrega: hasta el módulo anterior, `Order` y `Delivery` solo se usaban internamente para el módulo de mocks. Un pedido requiere un `user` ya existente; una entrega requiere un `order` existente y un `deliveryAgent` que sea un usuario con rol `delivery`.
 
 ## Módulo de mocking (`/api/mocks`)
 
@@ -221,3 +234,49 @@ curl http://localhost:8080/api/logs/test
 ```
 
 Después de llamarlo, se puede revisar la consola y los archivos en `logs/` para confirmar que cada nivel apareció donde corresponde (por ejemplo, que `error.log` solo tiene las líneas de `error` y `fatal`, sin `debug` ni `info`).
+
+## Documentación con Swagger (OpenAPI)
+
+La API expone documentación interactiva en **`GET /api/docs`**. Ahí se puede ver cada endpoint, probarlo directamente desde el navegador ("Try it out"), y revisar los schemas de request/response.
+
+```
+npm start
+# abrir en el navegador:
+http://localhost:8080/api/docs
+```
+
+### Cómo está armada (separada de las rutas)
+
+Toda la configuración de Swagger vive en `src/docs/`, sin tocar `src/routes/`:
+
+```
+src/docs/
+  swagger.config.js   # arma el spec OpenAPI (info, servers, tags) y monta swagger-ui-express
+  responses.js         # helpers para no repetir la forma de las respuestas success/error
+  schemas/              # schemas reutilizables (uno por entidad)
+  paths/                 # documentación de cada endpoint, agrupada por módulo
+```
+
+`app.js` solo llama a `setupSwagger(app, config.port)`; no conoce el detalle de la configuración de Swagger, y las rutas (`src/routes/*.js`) no tienen ninguna anotación de Swagger mezclada.
+
+### Qué está documentado
+
+Agrupado por tags, igual que en la UI:
+
+- **Users**: registro, login, listado, detalle y cambio de rol.
+- **Products**: catálogo (listado con filtro de disponibilidad, detalle, alta, edición, baja).
+- **Orders**: pedidos (listado, detalle, creación, cambio de estado).
+- **Deliveries**: entregas (listado, detalle, creación, cambio de estado).
+- **Mocks**: los 5 endpoints de preview (`users`, `delivery-agents`, `orders`, `deliveries`, `preview`) y el de inserción real (`generate`), con sus query params/body y los errores de cantidad inválida o relación inválida.
+- **Logger**: `GET /api/logs/test`, aclarando explícitamente que es una herramienta de validación interna y no una funcionalidad de negocio.
+
+Cada endpoint documenta método, ruta, parámetros de path/query (si aplica), body esperado (si aplica), la respuesta exitosa y **únicamente** los códigos de error que ese endpoint realmente puede devolver (por ejemplo, `POST /api/orders` documenta `404` porque el usuario referenciado puede no existir, pero no documenta `409` porque ese endpoint nunca lo devuelve).
+
+### Schemas reutilizables
+
+En `src/docs/schemas/`: `User`, `Product`, `Order`, `OrderItem`, `Delivery`, más las variantes `Mock*` (que sí exponen el password en texto plano, a diferencia del `User` real) y los genéricos `SuccessResponse`/`ErrorResponse`, que reflejan exactamente la forma de respuesta del [middleware de errores](#manejo-centralizado-de-errores) y de los controllers.
+
+### Aclaraciones para probar los endpoints
+
+- Los endpoints que devuelven objetos con `_id` (pedidos, entregas) requieren primero crear los datos relacionados: para crear una entrega hace falta un `order` y un `deliveryAgent` (un usuario con rol `delivery`) ya existentes; se pueden crear a mano con `Users`/`Orders`, o generarlos rápido con `POST /api/mocks/generate`.
+- Todos los `id` de ejemplo en la documentación son ilustrativos; hay que reemplazarlos por ids reales devueltos por la propia API al probar desde Swagger UI.
