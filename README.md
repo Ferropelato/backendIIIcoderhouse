@@ -1,6 +1,6 @@
-# ShipNow API - Entrega 1, 2, 3, 4 y 5
+# ShipNow API - Entrega 1, 2, 3, 4, 5 y 6
 
-API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, modulo de mocking, manejo centralizado de errores, logging profesional con Winston y documentacion interactiva con Swagger/OpenAPI.
+API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, modulo de mocking, manejo centralizado de errores, logging profesional con Winston, documentacion interactiva con Swagger/OpenAPI y una suite de tests funcionales con Mocha, Chai y Supertest.
 
 ## Estructura del proyecto
 
@@ -18,9 +18,10 @@ src/
   controllers/    # Manejo de req/res, puerta de entrada HTTP (sin try/catch propios)
   routes/         # Conectan cada path con su Controller
   utils/          # catchAsync: reenvia errores sync/async al middleware global
-  app.js          # Configuracion de Express
-  server.js       # Punto de entrada
+  app.js          # Configuracion de Express (sin app.listen, para poder testearla)
+  server.js       # Punto de entrada: conecta Mongo y recien ahi levanta el puerto
 logs/             # Archivos de log generados en runtime (ignorados por git, salvo .gitkeep)
+test/             # Suite de tests funcionales (Mocha + Chai + Supertest)
 ```
 
 ## Instrucciones para correr el proyecto localmente
@@ -280,3 +281,42 @@ En `src/docs/schemas/`: `User`, `Product`, `Order`, `OrderItem`, `Delivery`, má
 
 - Los endpoints que devuelven objetos con `_id` (pedidos, entregas) requieren primero crear los datos relacionados: para crear una entrega hace falta un `order` y un `deliveryAgent` (un usuario con rol `delivery`) ya existentes; se pueden crear a mano con `Users`/`Orders`, o generarlos rápido con `POST /api/mocks/generate`.
 - Todos los `id` de ejemplo en la documentación son ilustrativos; hay que reemplazarlos por ids reales devueltos por la propia API al probar desde Swagger UI.
+
+## Testing (Mocha, Chai y Supertest)
+
+### Herramientas
+
+- **Mocha**: organiza y ejecuta los tests (`describe`/`it`).
+- **Chai**: aserciones (`expect(...)`), para validar status HTTP y la forma exacta del body, no solo que "responda".
+- **Supertest**: hace las peticiones HTTP directamente sobre la app de Express (`src/app.js`), **sin** levantar un puerto real (`server.js` es el único que hace `app.listen`, y los tests nunca lo importan).
+
+### Cómo correr los tests
+
+```
+npm test
+```
+
+Esto ejecuta `mocha`, que carga automáticamente `test/setup.js` (configurado en `.mocharc.json`) antes de cualquier test.
+
+### Entorno de testing (separado del de desarrollo)
+
+- `NODE_ENV` se fuerza a `test` desde `test/setup.js`, independientemente de lo que haya en `.env`.
+- **Base de datos separada y descartable**: los tests no usan la MongoDB de desarrollo. `test/setup.js` levanta una instancia de **MongoDB en memoria** (`mongodb-memory-server`) antes de correr la suite (`beforeAll`) y la apaga al terminar (`afterAll`) — no hace falta tener Mongo corriendo ni configurar una base de test a mano, y nunca se tocan datos reales.
+- **Limpieza entre tests**: un hook `afterEach` global vacía todas las colecciones después de cada test individual, así ningún test depende del estado que dejó otro ni del orden en que corren.
+- Variables de entorno propias: hay un `.env.test.example` (análogo a `.env.example`) con `NODE_ENV`, `PORT` y `MONGODB_URI` de referencia. En la práctica `MONGODB_URI` no se usa para conectar (la conexión real la arma `test/setup.js` contra la base en memoria), pero la variable debe existir igual porque la [validación de entorno](#instrucciones-para-correr-el-proyecto-localmente) del módulo 1 la exige para poder cargar la app. Si querés customizar `PORT` para los tests, copiá el archivo: `cp .env.test.example .env.test` (este archivo no se sube al repo).
+
+### Qué está cubierto
+
+- `test/users.test.js`: registro (éxito, email duplicado, rol inválido), login (éxito, credenciales inválidas), listado y detalle de usuarios (incluye 404), cambio de rol (éxito y sin permisos).
+- `test/orders.test.js`: creación de pedidos (éxito con cálculo de total, usuario inexistente, sin items), listado, detalle por id (incluye 404), cambio de estado (éxito, estado inválido, pedido inexistente).
+- `test/deliveries.test.js`: creación de entregas (éxito, pedido inexistente, repartidor sin rol `delivery`), detalle por id (incluye 404), cambio de estado (éxito e inválido).
+- `test/mocks.test.js`: preview de usuarios simulados (verifica que **no** persisten en la base), cantidades inválidas (negativa y por encima del máximo), relación inválida (pedidos sin usuarios), preview combinado (verifica las relaciones entre entidades), y `POST /generate` (inserción real en MongoDB + cantidad inválida).
+- `test/logs.test.js`: `GET /api/logs/test` dispara y devuelve los 6 niveles esperados.
+- `test/docs.test.js`: `GET /api/docs` sirve la interfaz de Swagger UI (coherencia con el módulo anterior).
+- `test/errors.test.js`: ruta inexistente (404) e id con formato inválido (400), verificando el formato uniforme `{ status: "error", error: { code, message } }` del [middleware central de errores](#manejo-centralizado-de-errores).
+
+Cada test valida el `status` HTTP **y** la estructura/propiedades relevantes del body (no solo que la request no falle) — por ejemplo, que un usuario recién creado tenga `role: "user"` por defecto y nunca exponga el `password`, o que el código de error (`error.code`) sea exactamente el esperado (`NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`, etc.).
+
+### Datos de prueba
+
+Todos los datos se generan dentro de cada test (usuarios con emails únicos vía `test/helpers/fixtures.js`, pedidos, repartidores), nunca se depende de datos cargados manualmente. Gracias a la base en memoria + la limpieza en `afterEach`, la suite completa es repetible: correr `npm test` muchas veces seguidas da siempre el mismo resultado.

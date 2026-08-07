@@ -1,7 +1,7 @@
 const orderRepository = require('../repositories/order.repository');
 const userRepository = require('../repositories/user.repository');
 const { ORDER_STATUS, ORDER_PRIORITY } = require('../constants');
-const { OrderNotFoundError, UserNotFoundError, InvalidStatusError } = require('../errors');
+const { OrderNotFoundError, UserNotFoundError, InvalidStatusError, ValidationError } = require('../errors');
 const logger = require('../logger');
 
 class OrderService {
@@ -18,6 +18,10 @@ class OrderService {
   }
 
   async createOrder({ user, items, priority }) {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new ValidationError('El pedido debe tener al menos un item', { items });
+    }
+
     const existingUser = await userRepository.getById(user);
     if (!existingUser) {
       throw new UserNotFoundError(user);
