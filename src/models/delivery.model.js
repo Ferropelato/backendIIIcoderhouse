@@ -1,5 +1,6 @@
 const { Schema, model } = require('mongoose');
-const { DELIVERY_STATUS } = require('../constants');
+const { DELIVERY_STATUS, VOUCHER_TYPES } = require('../constants');
+const buildFileMetadataSchema = require('./fileMetadata.schema');
 
 const deliverySchema = new Schema(
   {
@@ -12,6 +13,10 @@ const deliverySchema = new Schema(
     },
     address: { type: String, required: true },
     estimatedDeliveryDate: { type: Date, required: true },
+    vouchers: {
+      type: [buildFileMetadataSchema(Object.values(VOUCHER_TYPES))],
+      default: [],
+    },
   },
   { timestamps: true }
 );

@@ -7,6 +7,7 @@ module.exports = {
       lastName: { type: 'string', example: 'Palto' },
       email: { type: 'string', format: 'email', example: 'fernando@shipnow.com' },
       role: { type: 'string', enum: ['admin', 'user', 'delivery'], example: 'user' },
+      documents: { type: 'array', items: { $ref: '#/components/schemas/FileMetadata' } },
     },
   },
   RegisterUserInput: {

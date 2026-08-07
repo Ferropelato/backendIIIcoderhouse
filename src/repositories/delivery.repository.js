@@ -20,6 +20,12 @@ class DeliveryRepository {
   async updateById(id, updates) {
     return DeliveryModel.findByIdAndUpdate(id, updates, { new: true }).select('-__v');
   }
+
+  async addVoucher(id, voucherMetadata) {
+    return DeliveryModel.findByIdAndUpdate(id, { $push: { vouchers: voucherMetadata } }, { new: true }).select(
+      '-__v'
+    );
+  }
 }
 
 module.exports = new DeliveryRepository();

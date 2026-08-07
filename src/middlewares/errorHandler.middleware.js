@@ -1,7 +1,23 @@
-const { AppError, ERROR_DICTIONARY } = require('../errors');
+const multer = require('multer');
+const { AppError, ERROR_DICTIONARY, FileTooLargeError, UnexpectedFileFieldError, ValidationError } = require('../errors');
+const { MAX_FILE_SIZE_MB } = require('../uploads/multer.config');
 const logger = require('../logger');
 
+function mapMulterError(err) {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return new FileTooLargeError(MAX_FILE_SIZE_MB);
+  }
+  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return new UnexpectedFileFieldError(err.field);
+  }
+  return new ValidationError(`Error al procesar el archivo: ${err.message}`);
+}
+
 function errorHandler(err, req, res, next) {
+  if (err instanceof multer.MulterError) {
+    return errorHandler(mapMulterError(err), req, res, next);
+  }
+
   if (err instanceof AppError) {
     const logMessage = `${req.method} ${req.originalUrl} -> ${err.code}: ${err.message}`;
     if (err.statusCode >= 500) {

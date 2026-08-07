@@ -11,7 +11,9 @@ let mongod;
 
 exports.mochaHooks = {
   async beforeAll() {
-    this.timeout(30000);
+    // La primera corrida en una maquina nueva descarga el binario de MongoDB
+    // (una sola vez, despues queda cacheado), por eso el timeout es generoso.
+    this.timeout(180000);
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
   },

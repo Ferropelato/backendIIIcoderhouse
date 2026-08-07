@@ -4,3 +4,7 @@ node_modules/
 *.log
 logs/*
 !logs/.gitkeep
+uploads/user-documents/*
+!uploads/user-documents/.gitkeep
+uploads/delivery-vouchers/*
+!uploads/delivery-vouchers/.gitkeep

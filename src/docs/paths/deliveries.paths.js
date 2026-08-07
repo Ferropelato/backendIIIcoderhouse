@@ -60,4 +60,30 @@ module.exports = {
       },
     },
   },
+  '/deliveries/{did}/voucher': {
+    post: {
+      tags: ['Deliveries'],
+      summary: 'Subir un comprobante asociado a una entrega',
+      description:
+        'Sube un archivo (imagen o PDF, maximo 5MB) y lo asocia a la entrega. Solo se guardan los metadatos en la ' +
+        'base de datos; el archivo se guarda en el servidor bajo uploads/delivery-vouchers/.',
+      parameters: [
+        { name: 'did', in: 'path', required: true, schema: { type: 'string' }, description: 'Id de la entrega' },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'multipart/form-data': { schema: { $ref: '#/components/schemas/UploadDeliveryVoucherInput' } },
+        },
+      },
+      responses: {
+        201: successResponse('Comprobante cargado y asociado a la entrega', deliverySchema),
+        400: errorResponse(
+          'Archivo faltante, tipo de archivo no permitido, archivo demasiado grande, campo incorrecto o ' +
+          'tipo de comprobante invalido (delivery_proof/signature/invoice)'
+        ),
+        404: errorResponse('No existe una entrega con ese id'),
+      },
+    },
+  },
 };

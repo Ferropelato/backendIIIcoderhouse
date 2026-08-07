@@ -1,6 +1,6 @@
-# ShipNow API - Entrega 1, 2, 3, 4, 5 y 6
+# ShipNow API - Entrega 1, 2, 3, 4, 5, 6 y 7
 
-API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, modulo de mocking, manejo centralizado de errores, logging profesional con Winston, documentacion interactiva con Swagger/OpenAPI y una suite de tests funcionales con Mocha, Chai y Supertest.
+API de ShipNow refactorizada en arquitectura por capas (Controller -> Service -> Repository), con configuracion de entorno validada, constantes centralizadas para roles y estados, modulo de mocking, manejo centralizado de errores, logging profesional con Winston, documentacion interactiva con Swagger/OpenAPI, una suite de tests funcionales con Mocha/Chai/Supertest y carga de archivos (documentos y comprobantes) con Multer.
 
 ## Estructura del proyecto
 
@@ -11,16 +11,18 @@ src/
   docs/           # Configuracion y contenido de Swagger/OpenAPI (separado de las rutas)
   errors/         # Errores personalizados del dominio + diccionario de errores
   logger/         # Configuracion centralizada de Winston (niveles, formato, transports)
-  middlewares/    # Middleware global de manejo de errores (integrado con el logger)
+  middlewares/    # Middleware global de manejo de errores (integrado con el logger y Multer)
   models/         # Esquemas de Mongoose (sin logica de negocio)
   repositories/    # Unico lugar que conoce Mongoose/MongoDB
   services/       # Logica de negocio (aca se lanzan los errores de dominio)
   controllers/    # Manejo de req/res, puerta de entrada HTTP (sin try/catch propios)
   routes/         # Conectan cada path con su Controller
-  utils/          # catchAsync: reenvia errores sync/async al middleware global
+  uploads/        # Configuracion centralizada de Multer (separada de los routers)
+  utils/          # catchAsync, removeFileIfExists, etc.
   app.js          # Configuracion de Express (sin app.listen, para poder testearla)
   server.js       # Punto de entrada: conecta Mongo y recien ahi levanta el puerto
 logs/             # Archivos de log generados en runtime (ignorados por git, salvo .gitkeep)
+uploads/          # Archivos subidos por los usuarios (ignorados por git, salvo .gitkeep)
 test/             # Suite de tests funcionales (Mocha + Chai + Supertest)
 ```
 
@@ -72,8 +74,10 @@ test/             # Suite de tests funcionales (Mocha + Chai + Supertest)
 - `GET /api/deliveries/:did`
 - `POST /api/deliveries`
 - `PATCH /api/deliveries/:did/status`
+- `POST /api/users/:uid/documents` (multipart/form-data)
+- `POST /api/deliveries/:did/voucher` (multipart/form-data)
 
-Los pedidos (`orders`) y las entregas (`deliveries`) se agregaron como endpoints reales en esta entrega: hasta el módulo anterior, `Order` y `Delivery` solo se usaban internamente para el módulo de mocks. Un pedido requiere un `user` ya existente; una entrega requiere un `order` existente y un `deliveryAgent` que sea un usuario con rol `delivery`.
+Los pedidos (`orders`) y las entregas (`deliveries`) se agregaron como endpoints reales en esta entrega: hasta el módulo anterior, `Order` y `Delivery` solo se usaban internamente para el módulo de mocks. Un pedido requiere un `user` ya existente; una entrega requiere un `order` existente y un `deliveryAgent` que sea un usuario con rol `delivery`. Los dos últimos endpoints (carga de archivos) se explican en detalle en la sección [Carga de archivos](#carga-de-archivos-documentos-y-comprobantes-multer) más abajo.
 
 ## Módulo de mocking (`/api/mocks`)
 
@@ -298,6 +302,10 @@ npm test
 
 Esto ejecuta `mocha`, que carga automáticamente `test/setup.js` (configurado en `.mocharc.json`) antes de cualquier test.
 
+> `mocha`, `chai`, `supertest` y `mongodb-memory-server` están en `dependencies` (no en `devDependencies`), a propósito: así el binario de `mocha` queda disponible siempre, incluso en entornos que instalan con `npm ci --omit=dev` o con `NODE_ENV=production`, y `npm test` no falla por falta del ejecutable.
+>
+> La primera vez que se corren los tests en una máquina nueva, `mongodb-memory-server` descarga el binario de MongoDB (una sola vez; después queda cacheado en `~/.cache/mongodb-binaries` y las corridas siguientes son rápidas). Por eso el hook de arranque tiene un timeout generoso (180s).
+
 ### Entorno de testing (separado del de desarrollo)
 
 - `NODE_ENV` se fuerza a `test` desde `test/setup.js`, independientemente de lo que haya en `.env`.
@@ -314,9 +322,74 @@ Esto ejecuta `mocha`, que carga automáticamente `test/setup.js` (configurado en
 - `test/logs.test.js`: `GET /api/logs/test` dispara y devuelve los 6 niveles esperados.
 - `test/docs.test.js`: `GET /api/docs` sirve la interfaz de Swagger UI (coherencia con el módulo anterior).
 - `test/errors.test.js`: ruta inexistente (404) e id con formato inválido (400), verificando el formato uniforme `{ status: "error", error: { code, message } }` del [middleware central de errores](#manejo-centralizado-de-errores).
+- `test/uploads.test.js`: carga de un documento de usuario válido (verifica que el archivo quede en disco y que la base solo tenga los metadatos), archivo faltante, tipo de documento inválido, tipo de archivo no permitido, usuario inexistente; y lo mismo para el comprobante de una entrega (carga válida, archivo faltante, entrega inexistente).
 
 Cada test valida el `status` HTTP **y** la estructura/propiedades relevantes del body (no solo que la request no falle) — por ejemplo, que un usuario recién creado tenga `role: "user"` por defecto y nunca exponga el `password`, o que el código de error (`error.code`) sea exactamente el esperado (`NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`, etc.).
 
 ### Datos de prueba
 
 Todos los datos se generan dentro de cada test (usuarios con emails únicos vía `test/helpers/fixtures.js`, pedidos, repartidores), nunca se depende de datos cargados manualmente. Gracias a la base en memoria + la limpieza en `afterEach`, la suite completa es repetible: correr `npm test` muchas veces seguidas da siempre el mismo resultado.
+
+## Carga de archivos: documentos y comprobantes (Multer)
+
+ShipNow permite subir documentos de usuario (ej. DNI, licencia) y comprobantes de entrega, usando **Multer**. Solo se guardan los **metadatos** en MongoDB; el archivo en si vive en el disco del servidor, bajo `uploads/`.
+
+### Configuración centralizada (separada de los routers)
+
+Toda la configuración de Multer vive en `src/uploads/`, no en las rutas:
+
+```
+src/uploads/
+  paths.js            # define y crea las carpetas de destino (uploads/user-documents, uploads/delivery-vouchers)
+  multer.config.js     # storage, nombre de archivo, tipos permitidos, tamaño maximo y fileFilter
+```
+
+Las rutas (`src/routes/user.routes.js`, `src/routes/delivery.routes.js`) solo importan las instancias de Multer ya configuradas y las usan como middleware (`userDocumentsUpload.single('document')`); no definen ninguna opción de Multer por su cuenta.
+
+- **Carpetas**: `uploads/user-documents/` (documentos de usuario) y `uploads/delivery-vouchers/` (comprobantes de entrega). Ambas se crean solas al arrancar la app y están en `.gitignore` (solo se trackea un `.gitkeep` en cada una).
+- **Nombres de archivo**: se generan (`timestamp-random.ext`), nunca se usa el nombre original para guardar en disco — evita colisiones y problemas de seguridad con nombres de archivo maliciosos.
+- **Tipos permitidos**: `image/jpeg`, `image/png`, `image/webp`, `application/pdf`.
+- **Tamaño máximo**: 5MB.
+
+### Endpoints
+
+- **`POST /api/users/:uid/documents`** (`multipart/form-data`): campo de archivo `document` (requerido) + campo `documentType` (requerido: `id_card`, `driver_license` o `proof_of_address`). Verifica que el usuario exista, valida el archivo y el tipo de documento, y agrega el documento al array `documents` del usuario.
+- **`POST /api/deliveries/:did/voucher`** (`multipart/form-data`): campo de archivo `voucher` (requerido) + campo opcional `voucherType` (`delivery_proof` por defecto, o `signature`/`invoice`). Verifica que la entrega exista, valida el archivo, y agrega el comprobante al array `vouchers` de la entrega. Devuelve la entrega actualizada completa.
+
+Ambos endpoints están documentados en Swagger (`/api/docs`, tags **Users** y **Deliveries**) como `multipart/form-data`, con el nombre del campo de archivo, los campos adicionales y sus valores permitidos, y los errores posibles.
+
+### Metadatos guardados en la base
+
+Por cada archivo, en el array `documents` (usuario) o `vouchers` (entrega), se guarda: `originalName`, `storedName`, `path` (relativa al proyecto), `mimeType`, `size`, `documentType` y `uploadedAt`. El archivo nunca se guarda en MongoDB.
+
+### Errores específicos de archivos
+
+Todos responden con el mismo formato uniforme del [middleware central de errores](#manejo-centralizado-de-errores):
+
+| Error | Código | Cuándo ocurre |
+|---|---|---|
+| `FileRequiredError` | 400 `VALIDATION_ERROR` | No se envió ningún archivo en el campo esperado. |
+| `InvalidFileTypeError` | 400 `VALIDATION_ERROR` | El `mimetype` del archivo no está en la lista permitida. |
+| `FileTooLargeError` | 400 `VALIDATION_ERROR` | El archivo supera los 5MB (mapeado desde el `MulterError` nativo). |
+| `UnexpectedFileFieldError` | 400 `VALIDATION_ERROR` | El archivo llegó en un campo distinto al esperado (`document`/`voucher`). |
+| `InvalidDocumentTypeError` | 400 `VALIDATION_ERROR` | `documentType`/`voucherType` no es uno de los valores permitidos. |
+| `UserNotFoundError` / `DeliveryNotFoundError` | 404 `NOT_FOUND` | La entidad a la que se quiere asociar el archivo no existe. |
+| `FileUploadError` | 500 `INTERNAL_SERVER_ERROR` | Falla real al guardar los metadatos en MongoDB (después de que el archivo ya se subió). |
+
+Si la validación falla **después** de que Multer ya guardó el archivo en disco (tipo de documento inválido, entidad inexistente, o falla al guardar en la base), el servicio correspondiente (`user.service.js` / `delivery.service.js`) borra ese archivo automáticamente (`removeFileIfExists`) para no dejar archivos huérfanos sin asociar a ninguna entidad.
+
+### Logging
+
+El logger registra: carga exitosa de un documento/comprobante (`info`, con el id de la entidad y el tipo de documento), y cualquier error de carga —tipo no permitido, archivo faltante, tamaño excedido, entidad no encontrada— como `warning` o `error` automáticamente a través del middleware central de errores (igual que el resto de la API).
+
+### Cómo probarlo
+
+```
+curl -X POST http://localhost:8080/api/users/<uid>/documents \
+  -F "documentType=id_card" \
+  -F "document=@/ruta/a/mi-dni.pdf"
+
+curl -X POST http://localhost:8080/api/deliveries/<did>/voucher \
+  -F "voucherType=delivery_proof" \
+  -F "voucher=@/ruta/a/comprobante.jpg"
+```

@@ -1,13 +1,18 @@
 const bcrypt = require('bcryptjs');
 const userRepository = require('../repositories/user.repository');
-const { ROLES } = require('../constants');
+const { ROLES, USER_DOCUMENT_TYPES } = require('../constants');
 const {
   UserNotFoundError,
   DuplicateResourceError,
   InvalidRoleError,
   InvalidCredentialsError,
   ForbiddenRoleActionError,
+  InvalidDocumentTypeError,
+  FileUploadError,
 } = require('../errors');
+const { toRelativePath } = require('../uploads/paths');
+const removeFileIfExists = require('../utils/removeFileIfExists');
+const logger = require('../logger');
 
 class UserService {
   async getAllUsers() {
@@ -73,6 +78,42 @@ class UserService {
       throw new UserNotFoundError(id);
     }
     return user;
+  }
+
+  async addUserDocument(userId, file, documentType) {
+    try {
+      if (!Object.values(USER_DOCUMENT_TYPES).includes(documentType)) {
+        throw new InvalidDocumentTypeError(documentType, Object.values(USER_DOCUMENT_TYPES));
+      }
+
+      const user = await userRepository.getById(userId);
+      if (!user) {
+        throw new UserNotFoundError(userId);
+      }
+
+      const documentMetadata = {
+        originalName: file.originalname,
+        storedName: file.filename,
+        path: toRelativePath(file.path),
+        mimeType: file.mimetype,
+        size: file.size,
+        documentType,
+      };
+
+      let updatedUser;
+      try {
+        updatedUser = await userRepository.addDocument(userId, documentMetadata);
+      } catch (dbError) {
+        throw new FileUploadError(dbError);
+      }
+
+      logger.info(`Documento cargado correctamente: usuario=${userId}, tipo=${documentType}, archivo=${file.filename}`);
+
+      return updatedUser;
+    } catch (error) {
+      await removeFileIfExists(file.path);
+      throw error;
+    }
   }
 
   toPublicUser(user) {

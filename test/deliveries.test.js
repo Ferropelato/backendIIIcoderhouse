@@ -1,22 +1,6 @@
 const { expect } = require('chai');
 const request = require('supertest');
-const { app, createUser, createDeliveryAgent, createOrder } = require('./helpers/fixtures');
-
-async function createDelivery(overrides = {}) {
-  const order = overrides.order || (await createOrder());
-  const agent = overrides.agent || (await createDeliveryAgent());
-
-  const res = await request(app)
-    .post('/api/deliveries')
-    .send({
-      order: order._id,
-      deliveryAgent: agent.id,
-      address: 'Calle Falsa 123',
-      estimatedDeliveryDate: new Date().toISOString(),
-    });
-
-  return res.body.payload;
-}
+const { app, createUser, createDeliveryAgent, createOrder, createDelivery } = require('./helpers/fixtures');
 
 describe('Deliveries API', () => {
   describe('POST /api/deliveries', () => {

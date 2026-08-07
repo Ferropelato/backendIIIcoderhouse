@@ -16,6 +16,7 @@ module.exports = {
       },
       address: { type: 'string', example: 'Calle Falsa 123' },
       estimatedDeliveryDate: { type: 'string', format: 'date-time', example: '2026-08-10T15:00:00.000Z' },
+      vouchers: { type: 'array', items: { $ref: '#/components/schemas/FileMetadata' } },
     },
   },
   CreateDeliveryInput: {

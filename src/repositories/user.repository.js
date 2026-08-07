@@ -28,6 +28,12 @@ class UserRepository {
   async deleteById(id) {
     return UserModel.findByIdAndDelete(id);
   }
+
+  async addDocument(id, documentMetadata) {
+    return UserModel.findByIdAndUpdate(id, { $push: { documents: documentMetadata } }, { new: true }).select(
+      '-password -__v'
+    );
+  }
 }
 
 module.exports = new UserRepository();

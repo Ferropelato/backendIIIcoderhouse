@@ -40,4 +40,19 @@ async function createOrder(overrides = {}) {
   return res.body.payload;
 }
 
-module.exports = { app, createUser, createDeliveryAgent, createOrder, uniqueEmail };
+async function createDelivery(overrides = {}) {
+  const order = overrides.order || (await createOrder());
+  const agent = overrides.agent || (await createDeliveryAgent());
+
+  const res = await request(app)
+    .post('/api/deliveries')
+    .send({
+      order: order._id,
+      deliveryAgent: agent.id,
+      address: 'Calle Falsa 123',
+      estimatedDeliveryDate: new Date().toISOString(),
+    });
+  return res.body.payload;
+}
+
+module.exports = { app, createUser, createDeliveryAgent, createOrder, createDelivery, uniqueEmail };

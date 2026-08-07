@@ -132,6 +132,50 @@ class InvalidDeliveryAgentError extends ValidationError {
   }
 }
 
+// --- Errores especificos de carga de archivos ---
+
+class FileRequiredError extends ValidationError {
+  constructor(fieldName) {
+    super(`Debes adjuntar un archivo en el campo "${fieldName}"`, { fieldName });
+  }
+}
+
+class InvalidFileTypeError extends ValidationError {
+  constructor(mimeType, allowedTypes) {
+    super(`Tipo de archivo no permitido: "${mimeType}". Tipos permitidos: ${allowedTypes.join(', ')}`, {
+      mimeType,
+      allowedTypes,
+    });
+  }
+}
+
+class FileTooLargeError extends ValidationError {
+  constructor(maxSizeMb) {
+    super(`El archivo supera el tamaño maximo permitido (${maxSizeMb}MB)`, { maxSizeMb });
+  }
+}
+
+class UnexpectedFileFieldError extends ValidationError {
+  constructor(receivedField) {
+    super(`El campo del archivo recibido ("${receivedField}") no coincide con el esperado`, { receivedField });
+  }
+}
+
+class InvalidDocumentTypeError extends ValidationError {
+  constructor(documentType, allowedValues) {
+    super(`Tipo de documento invalido: "${documentType}". Valores permitidos: ${allowedValues.join(', ')}`, {
+      documentType,
+      allowedValues,
+    });
+  }
+}
+
+class FileUploadError extends InternalServerError {
+  constructor(originalError) {
+    super('Ocurrio un error al guardar el archivo', { reason: originalError.message });
+  }
+}
+
 module.exports = {
   AppError,
   ValidationError,
@@ -154,4 +198,10 @@ module.exports = {
   MockGenerationError,
   InvalidStatusError,
   InvalidDeliveryAgentError,
+  FileRequiredError,
+  InvalidFileTypeError,
+  FileTooLargeError,
+  UnexpectedFileFieldError,
+  InvalidDocumentTypeError,
+  FileUploadError,
 };

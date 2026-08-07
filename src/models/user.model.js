@@ -1,5 +1,6 @@
 const { Schema, model } = require('mongoose');
-const { ROLES } = require('../constants');
+const { ROLES, USER_DOCUMENT_TYPES } = require('../constants');
+const buildFileMetadataSchema = require('./fileMetadata.schema');
 
 const userSchema = new Schema(
   {
@@ -11,6 +12,10 @@ const userSchema = new Schema(
       type: String,
       enum: Object.values(ROLES),
       default: ROLES.USER,
+    },
+    documents: {
+      type: [buildFileMetadataSchema(Object.values(USER_DOCUMENT_TYPES))],
+      default: [],
     },
   },
   { timestamps: true }

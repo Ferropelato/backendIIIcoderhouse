@@ -6,6 +6,7 @@ const schemas = {
   ...require('./schemas/order.schema'),
   ...require('./schemas/delivery.schema'),
   ...require('./schemas/mock.schema'),
+  ...require('./schemas/file.schema'),
   ...require('./schemas/common.schema'),
 };
 
@@ -27,7 +28,7 @@ function buildSwaggerSpec(port) {
       description:
         'API de ShipNow: gestion de usuarios, productos, pedidos y entregas, con arquitectura por capas ' +
         '(Controller-Service-Repository), un modulo de mocking para generar datos de prueba, manejo ' +
-        'centralizado de errores y logging profesional con Winston.',
+        'centralizado de errores, logging profesional con Winston, y carga de documentos/comprobantes con Multer.',
     },
     servers: [{ url: `http://localhost:${port}/api`, description: 'Servidor local' }],
     tags: [

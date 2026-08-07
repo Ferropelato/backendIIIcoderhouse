@@ -79,4 +79,30 @@ module.exports = {
       },
     },
   },
+  '/users/{uid}/documents': {
+    post: {
+      tags: ['Users'],
+      summary: 'Subir un documento de un usuario',
+      description:
+        'Sube un archivo (imagen o PDF, maximo 5MB) y lo asocia al usuario. Solo se guardan los metadatos en la ' +
+        'base de datos; el archivo se guarda en el servidor bajo uploads/user-documents/.',
+      parameters: [
+        { name: 'uid', in: 'path', required: true, schema: { type: 'string' }, description: 'Id del usuario' },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'multipart/form-data': { schema: { $ref: '#/components/schemas/UploadUserDocumentInput' } },
+        },
+      },
+      responses: {
+        201: successResponse('Documento cargado y asociado al usuario', userSchema),
+        400: errorResponse(
+          'Archivo faltante, tipo de archivo no permitido, archivo demasiado grande, campo incorrecto o ' +
+          'tipo de documento invalido (id_card/driver_license/proof_of_address)'
+        ),
+        404: errorResponse('No existe un usuario con ese id'),
+      },
+    },
+  },
 };

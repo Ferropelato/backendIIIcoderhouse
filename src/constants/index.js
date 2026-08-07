@@ -30,4 +30,24 @@ const DELIVERY_STATUS = Object.freeze({
   FAILED: 'failed',
 });
 
-module.exports = { ROLES, PRODUCT_STATUS, ORDER_STATUS, ORDER_PRIORITY, DELIVERY_STATUS };
+const USER_DOCUMENT_TYPES = Object.freeze({
+  ID_CARD: 'id_card',
+  DRIVER_LICENSE: 'driver_license',
+  PROOF_OF_ADDRESS: 'proof_of_address',
+});
+
+const VOUCHER_TYPES = Object.freeze({
+  DELIVERY_PROOF: 'delivery_proof',
+  SIGNATURE: 'signature',
+  INVOICE: 'invoice',
+});
+
+module.exports = {
+  ROLES,
+  PRODUCT_STATUS,
+  ORDER_STATUS,
+  ORDER_PRIORITY,
+  DELIVERY_STATUS,
+  USER_DOCUMENT_TYPES,
+  VOUCHER_TYPES,
+};
